@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>課室尋寶 · 點一點，聽一聽</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#2b2350;
+    --sun:#ffc531; --berry:#ff5d8f; --sky:#3fa9ff; --leaf:#38c172; --grape:#8b5cf6; --orange:#ff8a3d;
+    --font: 'Noto Sans TC', 'PingFang HK', 'Microsoft JhengHei', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;overflow:hidden;background:#cfe6d6;font-family:var(--font);color:var(--ink)}
+  /* blurred fill so the map always covers the full screen */
+  .backdrop{position:fixed;inset:0;background:radial-gradient(circle at 20% 20%,#ffe9a8 0 8%,transparent 8.2%),radial-gradient(circle at 85% 80%,#ffd0e0 0 10%,transparent 10.2%),radial-gradient(circle at 80% 15%,#cfe8ff 0 7%,transparent 7.2%),radial-gradient(circle at 12% 85%,#d4f5e0 0 9%,transparent 9.2%),#fff7e6}
+  .stage{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(100vw, calc(100vh * 1672 / 940));width:min(100vw, calc(100dvh * 1672 / 940));
+    aspect-ratio:1672/940;cursor:pointer;isolation:isolate;touch-action:manipulation;
+    box-shadow:0 10px 60px rgba(43,35,80,.25);border-radius:min(1.6vw,18px);overflow:visible}
+  .stage .bg{position:absolute;inset:0;width:100%;height:100%;display:block;border-radius:inherit;user-select:none;-webkit-user-drag:none}
+  .spr{position:absolute;pointer-events:none;user-select:none;transform-origin:50% 70%;
+    --o:max(1.4px, calc(var(--sw) * .0032));
+    filter:
+      drop-shadow(var(--o) 0 0 #fff) drop-shadow(calc(var(--o) * -1) 0 0 #fff)
+      drop-shadow(0 var(--o) 0 #fff) drop-shadow(0 calc(var(--o) * -1) 0 #fff)
+      drop-shadow(0 calc(var(--o) * 1.6) calc(var(--o) * 1.4) rgba(43,35,80,.35));
+    transition:transform .28s cubic-bezier(.34,1.56,.64,1), filter .28s;
+    transform:translateY(calc(var(--o) * -0.8));
+  }
+  .spr.hover{transform:translateY(calc(var(--o) * -3)) scale(1.06)}
+  .spr.active{transform:translateY(calc(var(--o) * -5)) scale(1.14);
+    filter:
+      drop-shadow(var(--o) 0 0 #fff) drop-shadow(calc(var(--o) * -1) 0 0 #fff)
+      drop-shadow(0 var(--o) 0 #fff) drop-shadow(0 calc(var(--o) * -1) 0 #fff)
+      drop-shadow(0 0 calc(var(--o) * 3) #ffd84d)
+      drop-shadow(0 calc(var(--o) * 5) calc(var(--o) * 4) rgba(43,35,80,.45));
+    animation:wiggle 1.6s ease-in-out .3s infinite}
+  @keyframes wiggle{0%,100%{rotate:0deg}25%{rotate:-1.6deg}75%{rotate:1.6deg}}
+
+  /* title badge */
+  .badge{position:fixed;pointer-events:none;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));z-index:20;
+    display:flex;align-items:center;gap:12px;padding:10px 20px 10px 12px;background:#fff;border-radius:999px;
+    box-shadow:0 6px 0 #e9e1ff,0 10px 24px rgba(43,35,80,.18);border:4px solid var(--sun)}
+  .badge .dot{width:44px;height:44px;border-radius:50%;background:var(--berry);display:grid;place-items:center;color:#fff;font-weight:900;font-size:24px;box-shadow:inset 0 -4px 0 rgba(0,0,0,.15)}
+  .badge h1{font-size:clamp(18px,2.4vw,28px);font-weight:900;letter-spacing:.04em;line-height:1.1}
+  .badge p{font-size:clamp(12px,1.4vw,16px);font-weight:700;color:#6b5fa5}
+  .hint-btn{position:fixed;right:max(12px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));z-index:20;
+    font:900 clamp(16px,2vw,22px) var(--font);color:#fff;background:var(--sky);border:none;border-radius:999px;padding:12px 22px;
+    box-shadow:0 6px 0 #1d7fd1,0 10px 20px rgba(43,35,80,.2);cursor:pointer;transition:transform .15s}
+  .hint-btn:active{transform:translateY(4px);box-shadow:0 2px 0 #1d7fd1}
+  .stage.pulse .spr{animation:pulse 1.2s ease-in-out 2}
+  @keyframes pulse{50%{transform:translateY(calc(var(--o) * -4)) scale(1.08)}}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;
+    background:rgba(43,35,80,.32);backdrop-filter:blur(1.5px);opacity:0;pointer-events:none;transition:opacity .25s}
+  .overlay.open{opacity:1;pointer-events:auto}
+  .card{position:relative;width:min(92vw,520px);max-height:92dvh;background:#fff;border-radius:36px;padding:28px 28px 30px;text-align:center;
+    border:8px solid var(--c,var(--sun));box-shadow:0 14px 0 var(--cd,#e0a800),0 30px 60px rgba(0,0,0,.25);
+    transform:scale(.6) rotate(-4deg);transition:transform .45s cubic-bezier(.34,1.56,.64,1);display:flex;flex-direction:column;align-items:center;gap:14px}
+  .overlay.open .card{transform:scale(1) rotate(0)}
+  .card::before{content:"";position:absolute;inset:0;border-radius:28px;pointer-events:none;
+    background:radial-gradient(circle at 15% 12%,var(--cl,#fff5cc) 0 60px,transparent 61px),radial-gradient(circle at 90% 85%,var(--cl,#fff5cc) 0 80px,transparent 81px)}
+  .pic{position:relative;height:clamp(110px,28dvh,220px);width:100%;display:grid;place-items:center}
+  .pic img{max-width:85%;max-height:100%;object-fit:contain;
+    filter:drop-shadow(5px 0 0 #fff) drop-shadow(-5px 0 0 #fff) drop-shadow(0 5px 0 #fff) drop-shadow(0 -5px 0 #fff) drop-shadow(0 12px 10px rgba(43,35,80,.35));
+    animation:float 2.6s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-10px) rotate(2deg)}}
+  .name{position:relative;font-size:clamp(56px,13vw,96px);font-weight:900;line-height:1.05;color:var(--c,var(--sun));
+    -webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:0 6px 0 var(--ink);letter-spacing:.06em}
+  .say{position:relative;display:flex;align-items:center;gap:14px;font:900 clamp(24px,5vw,32px) var(--font);color:#fff;
+    background:var(--leaf);border:none;border-radius:999px;padding:16px 34px 16px 20px;cursor:pointer;
+    box-shadow:0 8px 0 #22924f,0 14px 24px rgba(34,146,79,.35);transition:transform .12s, box-shadow .12s;min-height:72px}
+  .say:active{transform:translateY(6px);box-shadow:0 2px 0 #22924f}
+  .say .ic{width:56px;height:56px;border-radius:50%;background:#fff;display:grid;place-items:center;color:var(--leaf)}
+  .say.playing .ic svg .w{animation:wave .7s ease-in-out infinite alternate}
+  .say.playing .ic svg .w2{animation-delay:.25s}
+  @keyframes wave{from{opacity:.2}to{opacity:1}}
+  .close{position:absolute;top:-22px;right:-22px;width:64px;height:64px;border-radius:50%;border:6px solid #fff;background:var(--berry);color:#fff;
+    display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 0 #c9346a,0 10px 20px rgba(0,0,0,.2);z-index:2}
+  .close:active{transform:translateY(4px);box-shadow:0 2px 0 #c9346a}
+  .note{position:relative;font-size:15px;font-weight:700;color:#c9346a;display:none;max-width:400px}
+  .note.show{display:block}
+  .toast{position:fixed;pointer-events:none;left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:20;
+    background:var(--leaf);color:#fff;border-radius:999px;padding:12px 26px;font-weight:900;font-size:clamp(18px,2.2vw,24px);border:4px solid #fff;
+    box-shadow:0 6px 0 #22924f,0 10px 24px rgba(0,0,0,.25);transition:opacity .4s;white-space:nowrap}
+  .toast.hide{opacity:0}
+  @media (max-width:640px){
+    .badge{padding:6px 14px 6px 6px;gap:8px;border-width:3px}
+    .badge .dot{width:32px;height:32px;font-size:18px}
+    .badge p{display:none}
+    .hint-btn{padding:8px 14px}
+    .close{top:-16px;right:-10px;width:56px;height:56px}
+    .card{padding:22px 18px 24px;border-radius:30px}
+  }
+  @media (orientation:portrait){
+    html,body{overflow-x:auto;overflow-y:hidden}
+    .stage{position:absolute;left:0;top:0;transform:none;height:100vh;height:100dvh;width:auto;border-radius:0}
+    .backdrop{display:none}
+  }
+  @media (orientation:portrait) and (max-width:820px){
+    .toast{white-space:normal;text-align:center;width:max-content;max-width:92vw;border-radius:24px}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+
+<header class="badge">
+  <div class="dot">學</div>
+  <div><h1>課室尋寶</h1><p>點一點物件，聽聽廣東話</p></div>
+</header>
+<button class="hint-btn" id="hintBtn" type="button">提示</button>
+
+<main class="stage" id="stage" aria-label="課室互動地圖">
+  <img class="bg" src="classroom.png" alt="課室圖畫" draggable="false">
+</main>
+
+<div class="toast" id="toast">點擊課室入面嘅物件啦</div>
+
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="objName">
+  <div class="card" id="card">
+    <button class="close" id="closeBtn" type="button" aria-label="關閉">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="pic"><img id="objPic" alt=""></div>
+    <div class="name" id="objName">桌子</div>
+    <button class="say" id="sayBtn" type="button" aria-label="播放廣東話讀音">
+      <span class="ic"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="w" d="M16 9a4 4 0 0 1 0 6"/><path class="w w2" d="M18.5 6.5a8 8 0 0 1 0 11"/></svg></span>
+      聽讀音
+    </button>
+    <div class="note" id="note">你部裝置未有廣東話語音，可能會用其他聲音讀出。可以喺系統設定加入「粵語（香港）」語音。</div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+(() => {
+  const D = window.CLASSROOM, W = D.W, H = D.H, LW = D.LW, LH = D.LH;
+  const stage = document.getElementById('stage');
+  const THEME = {
+    desk:['#ff8a3d','#d4621a','#ffe3cf'], chair:['#8b5cf6','#6235c9','#ece4ff'], board:['#3fa9ff','#1d7fd1','#dcefff'],
+    book:['#ff5d8f','#c9346a','#ffe0ea'], stat:['#ffc531','#d69e00','#fff3c7'], photo:['#38c172','#22924f','#d8f6e5'],
+    bag:['#ffb020','#cc8400','#fff0cc'], door:['#ef5350','#b72d2b','#ffe0df'], map:['#26b5c9','#138494','#d6f4f8'],
+    shelf:['#b9773d','#8a531f','#f6e5d3'], globe:['#3fa9ff','#1d7fd1','#dcefff'], window:['#5bc0eb','#2d93c0','#dff4fc'],
+    plant:['#38c172','#22924f','#d8f6e5'], stool:['#e07a5f','#b0533a','#fbe2da']
+  };
+
+  // decode hit map
+  const hit = new Uint8Array(LW * LH);
+  for (let i = 0, p = 0; i < D.hit.length; i += 2) { hit.fill(D.hit[i], p, p + D.hit[i + 1]); p += D.hit[i + 1]; }
+
+  // sprites
+  const els = D.items.map((it, i) => {
+    const img = new Image();
+    img.src = 'sprites/' + it.id + '.png';
+    img.className = 'spr'; img.alt = ''; img.draggable = false;
+    Object.assign(img.style, { left: it.x / W * 100 + '%', top: it.y / H * 100 + '%', width: it.w / W * 100 + '%', height: it.h / H * 100 + '%', zIndex: i + 1 });
+    stage.appendChild(img);
+    return img;
+  });
+  const setSW = () => stage.style.setProperty('--sw', stage.getBoundingClientRect().width + 'px');
+  setSW(); addEventListener('resize', setSW);
+
+  const pick = (e) => {
+    const r = stage.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) / r.width * LW), y = Math.floor((e.clientY - r.top) / r.height * LH);
+    if (x < 0 || y < 0 || x >= LW || y >= LH) return -1;
+    // search a small radius so little fingers don't miss
+    const v = hit[y * LW + x]; if (v) return v - 1;
+    for (let rad = 1; rad <= 4; rad++) for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
+      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= LW || yy >= LH) continue;
+      const w = hit[yy * LW + xx]; if (w) return w - 1;
+    }
+    return -1;
+  };
+
+  let hovered = -1, active = -1;
+  const lift = (i, cls, on) => {
+    if (i < 0) return;
+    els[i].classList.toggle(cls, on);
+    els[i].style.zIndex = on ? 200 + (cls === 'active' ? 100 : 0) : (els[i].classList.contains('active') || els[i].classList.contains('hover') ? els[i].style.zIndex : i + 1);
+  };
+  stage.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse' || active >= 0) return;
+    const i = pick(e); if (i === hovered) return;
+    lift(hovered, 'hover', false); hovered = i; lift(hovered, 'hover', true);
+    stage.style.cursor = i >= 0 ? 'pointer' : 'default';
+  });
+  stage.addEventListener('pointerleave', () => { lift(hovered, 'hover', false); hovered = -1; });
+  stage.addEventListener('click', (e) => { const i = pick(e); if (i >= 0) open(i); });
+
+  // modal
+  const ov = document.getElementById('overlay'), card = document.getElementById('card');
+  const nameEl = document.getElementById('objName'), pic = document.getElementById('objPic');
+  const sayBtn = document.getElementById('sayBtn'), note = document.getElementById('note');
+  let current = null, currentKind = null;
+  function open(i) {
+    lift(hovered, 'hover', false); hovered = -1;
+    if (active >= 0) lift(active, 'active', false);
+    active = i; lift(i, 'active', true);
+    const it = D.items[i], lab = D.labels[it.kind], t = THEME[it.kind];
+    current = lab.name;
+    nameEl.textContent = lab.name; currentKind = it.kind; preload(it.kind); pic.src = 'sprites/' + it.id + '.png'; pic.alt = lab.name;
+    card.style.setProperty('--c', t[0]); card.style.setProperty('--cd', t[1]); card.style.setProperty('--cl', t[2]);
+    setTimeout(() => { ov.classList.add('open'); sayBtn.focus({ preventScroll: true }); }, 260);
+    toast.classList.add('hide');
+  }
+  function close() {
+    ov.classList.remove('open');
+    if (active >= 0) { lift(active, 'active', false); active = -1; }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    sayBtn.classList.remove('playing');
+  }
+  document.getElementById('closeBtn').addEventListener('click', close);
+  ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+  // Cantonese speech (zh-HK)
+  let voice = null;
+  const findVoice = () => {
+    const vs = speechSynthesis.getVoices();
+    voice = vs.find(v => /zh[-_]HK/i.test(v.lang)) || vs.find(v => /yue/i.test(v.lang)) ||
+            vs.find(v => /cantonese|粵|廣東|hong kong/i.test(v.name)) || null;
+  };
+  if ('speechSynthesis' in window) { findVoice(); speechSynthesis.onvoiceschanged = findVoice; }
+  function speak(text) {
+    if (!('speechSynthesis' in window)) { note.textContent = '呢個瀏覽器唔支援朗讀功能。'; note.classList.add('show'); return; }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-HK'; if (voice) u.voice = voice;
+    u.rate = 0.75; u.pitch = 1.1; u.volume = 1;
+    u.onstart = () => sayBtn.classList.add('playing');
+    u.onend = u.onerror = () => sayBtn.classList.remove('playing');
+    speechSynthesis.speak(u);
+    note.classList.toggle('show', !voice && speechSynthesis.getVoices().length > 0);
+  }
+  // loud pre-recorded Cantonese audio, boosted through Web Audio
+  let ctx = null, out = null, src = null;
+  const buffers = {}, raw = {};
+  const preload = (k) => { if (!raw[k]) raw[k] = fetch('audio/' + k + '.mp3').then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); }).catch(e => { delete raw[k]; throw e; }); return raw[k]; };
+  const getCtx = () => {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+    ctx = new AC();
+    const gain = ctx.createGain(); gain.gain.value = 2.6;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 6; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.15;
+    const post = ctx.createGain(); post.gain.value = 1.35;
+    gain.connect(comp); comp.connect(post); post.connect(ctx.destination);
+    out = gain; return ctx;
+  };
+  async function play(kind, text) {
+    const c = getCtx();
+    try {
+      if (!c) throw 0;
+      if (c.state === 'suspended') await c.resume();
+      if (!buffers[kind]) buffers[kind] = await c.decodeAudioData((await preload(kind)).slice(0));
+      if (src) try { src.stop(); } catch (e) {}
+      src = c.createBufferSource(); src.buffer = buffers[kind]; src.connect(out);
+      sayBtn.classList.add('playing'); src.onended = () => sayBtn.classList.remove('playing');
+      src.start();
+    } catch (e) {
+      try { const a = new Audio('audio/' + kind + '.mp3'); a.volume = 1; sayBtn.classList.add('playing'); a.onended = () => sayBtn.classList.remove('playing'); await a.play(); }
+      catch (e2) { sayBtn.classList.remove('playing'); speak(text); }
+    }
+  }
+  sayBtn.addEventListener('click', () => current && play(currentKind, current));
+
+  // hint: make every object bounce
+  const toast = document.getElementById('toast');
+  const portrait = matchMedia('(orientation:portrait)');
+  const centerView = () => { if (portrait.matches) document.scrollingElement.scrollLeft = (stage.offsetWidth - innerWidth) / 2; };
+  if (portrait.matches) toast.textContent = '左右滑動，點擊物件啦';
+  requestAnimationFrame(centerView); portrait.addEventListener('change', () => { setSW(); centerView(); });
+  document.getElementById('hintBtn').addEventListener('click', () => {
+    stage.classList.remove('pulse'); void stage.offsetWidth; stage.classList.add('pulse');
+    setTimeout(() => stage.classList.remove('pulse'), 2600);
+  });
+  setTimeout(() => toast.classList.add('hide'), 6000);
+})();
+</script>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://perplexity.localhost","http://localhost:1420","http://127.0.0.1:1420","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  const DEFAULT_LINE_HEIGHT = 16;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  const PICK_CAPABILITIES = ["pick"];
+  const PICK_CHAIN_LENGTH = 4;
+  const PICK_MAX_TEXT_CHARS = 120;
+  const PICK_MAX_HTML_CHARS = 300;
+
+  function truncate(value, maxChars) {
+    return value.length > maxChars ? value.slice(0, maxChars - 1) + "…" : value;
+  }
+
+  function isPickableElement(element) {
+    return (
+      element instanceof Element &&
+      element !== document.documentElement &&
+      element !== document.body
+    );
+  }
+
+  function resolvePickTarget(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const element = document.elementFromPoint(x, y);
+    return isPickableElement(element) ? element.closest("svg") || element : null;
+  }
+
+  function pickLabel(element) {
+    if (element.id) return element.localName + "#" + element.id;
+    return [element.localName].concat(Array.from(element.classList).slice(0, 2)).join(".");
+  }
+
+  // Only attributes that help find the element in source. data-* values and URL
+  // query strings or fragments can carry tokens.
+  const PICK_ATTRIBUTES = new Set([
+    "id",
+    "class",
+    "name",
+    "type",
+    "role",
+    "alt",
+    "aria-label",
+    "href",
+    "src",
+  ]);
+
+  function pickAttributeValue(attribute) {
+    return attribute.name === "href" || attribute.name === "src"
+      ? attribute.value.split(/[?#]/)[0]
+      : attribute.value;
+  }
+
+  function describePickElement(element) {
+    const chain = [];
+    for (
+      let current = element;
+      isPickableElement(current) && chain.length < PICK_CHAIN_LENGTH;
+      current = current.parentElement
+    ) {
+      chain.unshift(current);
+    }
+    const attributes = Array.from(element.attributes)
+      .filter((attribute) => PICK_ATTRIBUTES.has(attribute.name))
+      .map((attribute) => ` ${attribute.name}="${pickAttributeValue(attribute).replace(/"/g, "&quot;")}"`)
+      .join("");
+    const text = (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim();
+    return {
+      chain: chain.map(pickLabel),
+      html: truncate(`<${element.localName}${attributes}>`, PICK_MAX_HTML_CHARS),
+      text: text ? truncate(text, PICK_MAX_TEXT_CHARS) : undefined,
+    };
+  }
+
+  // Hover asks once per frame, and innerText on a large section forces layout,
+  // so only the rect is re-read while the pointer stays on the same element.
+  // Clicks ask for fresh details since the page may have changed the element.
+  let lastPick = null;
+
+  function describePickTarget(element, fresh) {
+    if (fresh || lastPick?.element !== element) {
+      lastPick = { element, details: describePickElement(element) };
+    }
+    const rect = element.getBoundingClientRect();
+    return {
+      rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      ...lastPick.details,
+    };
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      capabilities: PICK_CAPABILITIES,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="position:relative;left:-${scrollX}px;top:-${scrollY}px">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_PICK") {
+      const element = resolvePickTarget(event.data.x, event.data.y);
+      postToTrustedTop({
+        type: "INLINE_EDIT_PICK_RESULT",
+        seq: event.data.seq,
+        target: element ? describePickTarget(element, event.data.fresh === true) : null,
+      });
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_BY") {
+      const { deltaX, deltaY, deltaMode } = event.data;
+      if (!scrollForwarding || !Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+      if (deltaMode !== 0 && deltaMode !== 1 && deltaMode !== 2) return;
+      const lineHeight =
+        parseFloat(getComputedStyle(document.documentElement).lineHeight) || DEFAULT_LINE_HEIGHT;
+      const scaleX = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerWidth : 1;
+      const scaleY = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerHeight : 1;
+      // The selection overlay receives the wheel event instead of this iframe.
+      // Instant scrolling preserves trackpad deltas even on smooth-scroll sites.
+      window.scrollBy({ left: deltaX * scaleX, top: deltaY * scaleY, behavior: "instant" });
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
+</html>
